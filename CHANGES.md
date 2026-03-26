@@ -35,7 +35,7 @@ return [window.parent.opener ?? window.parent, !!document.referrer ? document.re
 return [window.parent.opener ?? window.parent, '*'];
 ```
 
-Using `'*'` with an explicit window target (`window.parent`) is safe — it only tells the browser not to check the recipient's origin; the message is still sent directly to the parent window. This is the same pattern Discord's own development tooling uses.
+Using `'*'` with an explicit window target (`window.parent`) is safe — it only tells the browser not to check the recipient's origin; the message is still sent directly to the parent window.
 
 ### New: `sdk.handshake()` public method
 
@@ -58,35 +58,12 @@ sdk.handshake();
 await sdk.ready();
 ```
 
-### New: `debugHandshake` config option
-
-`SdkConfiguration` has a new optional `debugHandshake?: boolean` field (default `false`). When `true`, the SDK emits verbose `[DiscordSDK]` prefixed logs via `console.debug` covering:
-
-- Construction: `document.referrer`, computed `sourceOrigin`, `allowedOrigins`, auto-handshake flag
-- `handshake()`: `targetOrigin`, payload, null-source warning
-- Every incoming `postMessage`: origin, allowlist check, opcode — **including messages that are dropped** so you can diagnose origin filter issues
-- `READY` received
-- `ready()` called / resolved
-
-The logs use a native `console.debug` reference captured at module load, so they are safe to use before and after `READY` (no risk of the `captureLog` infinite loop).
-
-Enable for debugging:
-```typescript
-const sdk = new DiscordSDK(CLIENT_ID, {
-  disableAutoHandshake: true,
-  debugHandshake: true,
-});
-```
-
 ---
 
 ## Usage in the consumer project
 
 ```typescript
-const sdk = new DiscordSDK(CLIENT_ID, {
-  disableAutoHandshake: true,
-  // debugHandshake: true,  // enable when diagnosing
-});
+const sdk = new DiscordSDK(CLIENT_ID, { disableAutoHandshake: true });
 
 // In your setup hook, after React has mounted:
 sdk.handshake();
@@ -94,16 +71,16 @@ await sdk.ready();
 // ... authenticate etc.
 ```
 
-### What to look for in the debug logs
-
-| Log line | What it tells you |
-|---|---|
-| `sourceOrigin: "*"` | The `'*'` fix is in the built output — postMessages will go through |
-| `sourceOrigin: "https://xxx.discordsays.com"` | Old build is still active — reinstall from the fork |
-| `message DROPPED — origin not in allowlist` | Discord is responding but its origin isn't in `ALLOWED_ORIGINS` |
-| `FRAME received — cmd: DISPATCH \| evt: READY` | READY arrived and will be processed |
-| No messages received at all after handshake | Discord isn't responding; check the activity is running in an actual iframe |
-
 ### Mock environments
 
 `DiscordSDKMock.handshake()` immediately emits `READY` on the internal event bus, mirroring what a real connection does. No changes are needed to existing mock usage.
+
+---
+
+## Installing from the fork
+
+```json
+"@discord/embedded-app-sdk": "github:thosebeyond/embedded-app-sdk#main"
+```
+
+The compiled `output/` is committed to the repo, so no build step is required on install. When updating the fork, rebuild locally (`npm run build`), commit the updated `output/`, and push. Then update `package-lock.json` in the consumer project with `npm install`.

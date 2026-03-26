@@ -591,6 +591,5 @@ export declare class DiscordSDK implements IDiscordSDK {
     private handleClose;
     private handleHandshake;
     private handleFrame;
-    private _debug;
     _getSearch(): string;
 }

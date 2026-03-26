@@ -19,14 +19,6 @@ export interface SdkConfiguration {
      * password gate) may redirect before the Discord READY event can be received.
      */
     readonly disableAutoHandshake?: boolean;
-    /**
-     * When true, emits verbose [DiscordSDK] prefixed logs covering construction, handshake
-     * dispatch, every incoming postMessage (including origin-filtered drops), and the READY
-     * lifecycle. Useful for diagnosing handshake/ready issues in deployed Discord activities.
-     * Safe to use before READY because it bypasses the console override that would otherwise
-     * create an infinite loop.
-     */
-    readonly debugHandshake?: boolean;
 }
 export type MaybeZodObjectArray<T extends EventArgs> = T['subscribeArgs'] extends NonNullable<EventArgs['subscribeArgs']> ? [zod.infer<T['subscribeArgs']>] : [undefined?];
 export interface IDiscordSDK {

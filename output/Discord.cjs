@@ -20,9 +20,6 @@ exports.Opcodes = void 0;
     Opcodes[Opcodes["HELLO"] = 3] = "HELLO";
 })(exports.Opcodes || (exports.Opcodes = {}));
 const ALLOWED_ORIGINS = new Set(getAllowedOrigins());
-// Captured at module load before any console override so debug logs in handleMessage
-// are always safe (no risk of the postMessage → captureLog → handleMessage infinite loop).
-const _nativeDebug = console.debug.bind(console);
 function getAllowedOrigins() {
     if (typeof window === 'undefined')
         return [];
@@ -59,14 +56,12 @@ class DiscordSDK {
         }
     }
     constructor(clientId, configuration) {
-        var _a;
         this.sdkVersion = _package.version;
         this.mobileAppVersion = null;
         this.source = null;
         this.sourceOrigin = '';
         this.eventBus = new index.default();
         this.onReadyCallback = () => {
-            this._debug('READY received from Discord — setting isReady = true');
             this.overrideConsoleLogging();
             this.isReady = true;
         };
@@ -94,33 +89,24 @@ class DiscordSDK {
          * config.disableConsoleLogOverride to true when initializing the SDK
          */
         this.handleMessage = (event) => {
-            const isArray = Array.isArray(event.data);
-            const opcode = isArray ? event.data[0] : undefined;
-            this._debug('message received —', 'origin:', event.origin, '| inAllowlist:', ALLOWED_ORIGINS.has(event.origin), '| isArray:', isArray, '| opcode:', opcode, '| opcodeName:', opcode === exports.Opcodes.HANDSHAKE ? 'HANDSHAKE' : opcode === exports.Opcodes.FRAME ? 'FRAME' : opcode === exports.Opcodes.CLOSE ? 'CLOSE' : opcode === exports.Opcodes.HELLO ? 'HELLO' : 'unknown');
-            if (!ALLOWED_ORIGINS.has(event.origin)) {
-                this._debug('message DROPPED — origin not in allowlist. Allowlist:', [...ALLOWED_ORIGINS]);
+            if (!ALLOWED_ORIGINS.has(event.origin))
                 return;
-            }
             const tuple = event.data;
             if (!Array.isArray(tuple)) {
                 return;
             }
-            const [opcodeValue, data] = tuple;
-            switch (opcodeValue) {
+            const [opcode, data] = tuple;
+            switch (opcode) {
                 case exports.Opcodes.HELLO:
                     // backwards compat; the Discord client will still send HELLOs for old applications.
                     //
                     // TODO: figure out compatibility approach; it would be easier to maintain compatibility at the SDK level, not the underlying RPC protocol level...
-                    this._debug('HELLO received (backwards compat, ignored)');
                     return;
                 case exports.Opcodes.CLOSE:
-                    this._debug('CLOSE received');
                     return this.handleClose(data);
                 case exports.Opcodes.HANDSHAKE:
-                    this._debug('inbound HANDSHAKE received (no-op)');
                     return this.handleHandshake();
                 case exports.Opcodes.FRAME:
-                    this._debug('FRAME received — cmd:', data === null || data === void 0 ? void 0 : data.cmd, '| evt:', data === null || data === void 0 ? void 0 : data.evt);
                     return this.handleFrame(data);
                 default:
                     throw new Error('Invalid message format');
@@ -171,12 +157,8 @@ class DiscordSDK {
         this.mobileAppVersion = urlParams.get('mobile_app_version');
         // END Capture URL Query Params
         [this.source, this.sourceOrigin] = getRPCServerSource();
-        this._debug('constructed —', 'clientId:', this.clientId, '| frameId:', this.frameId, '| sourceOrigin:', this.sourceOrigin, '| document.referrer:', typeof document !== 'undefined' ? (document.referrer || '(empty)') : '(no document)', '| source is window.parent:', this.source === window.parent, '| allowedOrigins:', [...ALLOWED_ORIGINS], '| disableAutoHandshake:', (_a = this.configuration.disableAutoHandshake) !== null && _a !== void 0 ? _a : false);
         if (!this.configuration.disableAutoHandshake) {
             this.handshake();
-        }
-        else {
-            this._debug('auto-handshake suppressed — call sdk.handshake() manually');
         }
     }
     close(code, message) {
@@ -212,15 +194,10 @@ class DiscordSDK {
     }
     async ready() {
         if (this.isReady) {
-            this._debug('ready() called — already ready, resolving immediately');
             return;
         }
-        this._debug('ready() called — not yet ready, waiting for READY event...');
         await new Promise((resolve) => {
-            this.eventBus.once(events.Events.READY, () => {
-                this._debug('ready() resolved via READY event');
-                resolve();
-            });
+            this.eventBus.once(events.Events.READY, resolve);
         });
     }
     parseMajorMobileVersion() {
@@ -236,7 +213,6 @@ class DiscordSDK {
     }
     handshake() {
         var _a;
-        this._debug('handshake() called —', '| sourceOrigin (targetOrigin for postMessage):', this.sourceOrigin, '| source is null:', this.source == null, '| document.referrer at call time:', typeof document !== 'undefined' ? (document.referrer || '(empty)') : '(no document)');
         this.isReady = false;
         this.addOnReadyListener();
         const handshakePayload = {
@@ -249,11 +225,7 @@ class DiscordSDK {
         if (this.platform === Constants.Platform.DESKTOP || majorMobileVersion >= Constants.HANDSHAKE_SDK_VERSION_MINIMUM_MOBILE_VERSION) {
             handshakePayload['sdk_version'] = this.sdkVersion;
         }
-        this._debug('handshake() dispatching postMessage:', JSON.stringify([exports.Opcodes.HANDSHAKE, handshakePayload]));
         (_a = this.source) === null || _a === void 0 ? void 0 : _a.postMessage([exports.Opcodes.HANDSHAKE, handshakePayload], this.sourceOrigin);
-        if (this.source == null) {
-            this._debug('handshake() WARNING: source is null — postMessage was NOT sent');
-        }
     }
     addOnReadyListener() {
         this.eventBus.off(events.Events.READY, this.onReadyCallback);
@@ -307,11 +279,6 @@ class DiscordSDK {
             }
             (_b = this.pendingCommands.get(parsed.nonce)) === null || _b === void 0 ? void 0 : _b.resolve(parsed);
             this.pendingCommands.delete(parsed.nonce);
-        }
-    }
-    _debug(...args) {
-        if (this.configuration.debugHandshake) {
-            _nativeDebug('[DiscordSDK]', ...args);
         }
     }
     _getSearch() {

@@ -31,7 +31,7 @@
     "lint:ts": "tsc",
     "lint": "eslint ./src",
     "lint:fix": "eslint --fix ./src",
-    "prepare": "husky && rollup --bundleConfigAsCjs -c rollup.config.mjs",
+    "prepare": "(husky || true) && rollup --bundleConfigAsCjs -c rollup.config.mjs",
     "sync": "zx ./scripts/syncRPCSchema.mjs"
   },
   "lint-staged": {

@@ -2,7 +2,6 @@ function getDefaultSdkConfiguration() {
     return {
         disableConsoleLogOverride: false,
         disableAutoHandshake: false,
-        debugHandshake: false,
     };
 }
 
