@@ -55,6 +55,10 @@ export class DiscordSDKMock implements IDiscordSDK {
     this.emitEvent('READY', undefined);
   }
 
+  handshake() {
+    this.emitReady();
+  }
+
   close(...args: any[]) {
     console.info(`DiscordSDKMock: close(${JSON.stringify(args)})`);
   }

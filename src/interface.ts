@@ -13,6 +13,13 @@ export interface SdkConfiguration {
    * Setting this flag to true will disable this functionality
    */
   readonly disableConsoleLogOverride: boolean;
+  /**
+   * By default, the SDK sends the handshake to the Discord client immediately on construction.
+   * Set this to true to suppress the automatic handshake and call sdk.handshake() manually
+   * when your application is ready to begin the connection — useful when middleware (e.g. a
+   * password gate) may redirect before the Discord READY event can be received.
+   */
+  readonly disableAutoHandshake?: boolean;
 }
 
 export type MaybeZodObjectArray<T extends EventArgs> =
@@ -33,6 +40,7 @@ export interface IDiscordSDK {
   readonly source: Window | WindowProxy | null;
   readonly sourceOrigin: string;
 
+  handshake(): void;
   close(code: RPCCloseCodes, message: string): void;
   subscribe<K extends keyof typeof EventSchema>(
     event: K,

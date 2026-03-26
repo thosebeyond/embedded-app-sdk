@@ -78,6 +78,10 @@ export class DiscordSDK implements IDiscordSDK {
   private frameId: string;
   private eventBus = new EventEmitter();
   private isReady: boolean;
+  private onReadyCallback = () => {
+    this.overrideConsoleLogging();
+    this.isReady = true;
+  };
   private pendingCommands: Map<
     string,
     {
@@ -165,8 +169,9 @@ export class DiscordSDK implements IDiscordSDK {
     // END Capture URL Query Params
 
     [this.source, this.sourceOrigin] = getRPCServerSource();
-    this.addOnReadyListener();
-    this.handshake();
+    if (!this.configuration.disableAutoHandshake) {
+      this.handshake();
+    }
   }
   close(code: RPCCloseCodes, message: string) {
     window.removeEventListener('message', this.handleMessage);
@@ -233,7 +238,9 @@ export class DiscordSDK implements IDiscordSDK {
     return UNKNOWN_VERSION_NUMBER;
   }
 
-  private handshake() {
+  handshake() {
+    this.isReady = false;
+    this.addOnReadyListener();
     const handshakePayload: HandshakePayload = {
       v: 1,
       encoding: 'json',
@@ -248,10 +255,8 @@ export class DiscordSDK implements IDiscordSDK {
   }
 
   private addOnReadyListener() {
-    this.eventBus.once(RPCEvents.READY, () => {
-      this.overrideConsoleLogging();
-      this.isReady = true;
-    });
+    this.eventBus.off(RPCEvents.READY, this.onReadyCallback);
+    this.eventBus.once(RPCEvents.READY, this.onReadyCallback);
   }
 
   private overrideConsoleLogging() {
