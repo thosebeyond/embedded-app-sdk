@@ -27,6 +27,10 @@ export enum Opcodes {
 
 const ALLOWED_ORIGINS = new Set(getAllowedOrigins());
 
+// Captured at module load before any console override so debug logs in handleMessage
+// are always safe (no risk of the postMessage → captureLog → handleMessage infinite loop).
+const _nativeDebug = console.debug.bind(console);
+
 function getAllowedOrigins(): string[] {
   if (typeof window === 'undefined') return [];
 
@@ -79,6 +83,7 @@ export class DiscordSDK implements IDiscordSDK {
   private eventBus = new EventEmitter();
   private isReady: boolean;
   private onReadyCallback = () => {
+    this._debug('READY received from Discord — setting isReady = true');
     this.overrideConsoleLogging();
     this.isReady = true;
   };
@@ -169,8 +174,22 @@ export class DiscordSDK implements IDiscordSDK {
     // END Capture URL Query Params
 
     [this.source, this.sourceOrigin] = getRPCServerSource();
+
+    this._debug(
+      'constructed —',
+      'clientId:', this.clientId,
+      '| frameId:', this.frameId,
+      '| sourceOrigin:', this.sourceOrigin,
+      '| document.referrer:', typeof document !== 'undefined' ? (document.referrer || '(empty)') : '(no document)',
+      '| source is window.parent:', this.source === window.parent,
+      '| allowedOrigins:', [...ALLOWED_ORIGINS],
+      '| disableAutoHandshake:', this.configuration.disableAutoHandshake ?? false,
+    );
+
     if (!this.configuration.disableAutoHandshake) {
       this.handshake();
+    } else {
+      this._debug('auto-handshake suppressed — call sdk.handshake() manually');
     }
   }
   close(code: RPCCloseCodes, message: string) {
@@ -219,12 +238,16 @@ export class DiscordSDK implements IDiscordSDK {
 
   async ready() {
     if (this.isReady) {
+      this._debug('ready() called — already ready, resolving immediately');
       return;
-    } else {
-      await new Promise<void>((resolve) => {
-        this.eventBus.once(RPCEvents.READY, resolve);
-      });
     }
+    this._debug('ready() called — not yet ready, waiting for READY event...');
+    await new Promise<void>((resolve) => {
+      this.eventBus.once(RPCEvents.READY, () => {
+        this._debug('ready() resolved via READY event');
+        resolve();
+      });
+    });
   }
 
   private parseMajorMobileVersion(): number {
@@ -239,6 +262,13 @@ export class DiscordSDK implements IDiscordSDK {
   }
 
   handshake() {
+    this._debug(
+      'handshake() called —',
+      '| sourceOrigin (targetOrigin for postMessage):', this.sourceOrigin,
+      '| source is null:', this.source == null,
+      '| document.referrer at call time:', typeof document !== 'undefined' ? (document.referrer || '(empty)') : '(no document)',
+    );
+
     this.isReady = false;
     this.addOnReadyListener();
     const handshakePayload: HandshakePayload = {
@@ -251,7 +281,13 @@ export class DiscordSDK implements IDiscordSDK {
     if (this.platform === Platform.DESKTOP || majorMobileVersion >= HANDSHAKE_SDK_VERSION_MINIMUM_MOBILE_VERSION) {
       handshakePayload['sdk_version'] = this.sdkVersion;
     }
+
+    this._debug('handshake() dispatching postMessage:', JSON.stringify([Opcodes.HANDSHAKE, handshakePayload]));
     this.source?.postMessage([Opcodes.HANDSHAKE, handshakePayload], this.sourceOrigin);
+
+    if (this.source == null) {
+      this._debug('handshake() WARNING: source is null — postMessage was NOT sent');
+    }
   }
 
   private addOnReadyListener() {
@@ -284,25 +320,43 @@ export class DiscordSDK implements IDiscordSDK {
    * config.disableConsoleLogOverride to true when initializing the SDK
    */
   private handleMessage = (event: MessageEvent) => {
-    if (!ALLOWED_ORIGINS.has(event.origin)) return;
+    const isArray = Array.isArray(event.data);
+    const opcode = isArray ? event.data[0] : undefined;
+    this._debug(
+      'message received —',
+      'origin:', event.origin,
+      '| inAllowlist:', ALLOWED_ORIGINS.has(event.origin),
+      '| isArray:', isArray,
+      '| opcode:', opcode,
+      '| opcodeName:', opcode === Opcodes.HANDSHAKE ? 'HANDSHAKE' : opcode === Opcodes.FRAME ? 'FRAME' : opcode === Opcodes.CLOSE ? 'CLOSE' : opcode === Opcodes.HELLO ? 'HELLO' : 'unknown',
+    );
+
+    if (!ALLOWED_ORIGINS.has(event.origin)) {
+      this._debug('message DROPPED — origin not in allowlist. Allowlist:', [...ALLOWED_ORIGINS]);
+      return;
+    }
 
     const tuple = event.data;
     if (!Array.isArray(tuple)) {
       return;
     }
-    const [opcode, data] = tuple;
+    const [opcodeValue, data] = tuple;
 
-    switch (opcode) {
+    switch (opcodeValue) {
       case Opcodes.HELLO:
         // backwards compat; the Discord client will still send HELLOs for old applications.
         //
         // TODO: figure out compatibility approach; it would be easier to maintain compatibility at the SDK level, not the underlying RPC protocol level...
+        this._debug('HELLO received (backwards compat, ignored)');
         return;
       case Opcodes.CLOSE:
+        this._debug('CLOSE received');
         return this.handleClose(data);
       case Opcodes.HANDSHAKE:
+        this._debug('inbound HANDSHAKE received (no-op)');
         return this.handleHandshake();
       case Opcodes.FRAME:
+        this._debug('FRAME received — cmd:', (data as any)?.cmd, '| evt:', (data as any)?.evt);
         return this.handleFrame(data);
       default:
         throw new Error('Invalid message format');
@@ -347,6 +401,12 @@ export class DiscordSDK implements IDiscordSDK {
       this.pendingCommands.delete(parsed.nonce);
     }
   }
+  private _debug(...args: unknown[]) {
+    if (this.configuration.debugHandshake) {
+      _nativeDebug('[DiscordSDK]', ...args);
+    }
+  }
+
   _getSearch() {
     return typeof window === 'undefined' ? '' : window.location.search;
   }
